@@ -31,18 +31,20 @@ public class TranslateHelper
     private List<Type> translatorTypes;
     private bool isSpeaking = false;
     private bool isIniting = false;
-    public TranslateHelper(IPublicAPI publicAPI)
+    public string defaultLanguageKey = "auto";
+    public TranslateHelper(IPublicAPI publicAPI, string defaultLanguageKey = "auto")
     {
         this.translaters = new List<Youdao.ITranslater?>{
             null, null, null
         };
         translatorTypes = new List<Type>{
             typeof(Youdao.V2.YoudaoTranslater),
-            typeof(Youdao.YoudaoTranslater),
+            typeof(Youdao.old.YoudaoTranslater),
             typeof(Youdao.Backup.BackUpTranslater)
         };
         this.initTranslater();
         this.publicAPI = publicAPI;
+        this.defaultLanguageKey = defaultLanguageKey;
 
         // backup translater, We don't need to initialize it with the others, because it doesn't have an error
         // this.backUpTranslater = new Youdao.Backup.BackUpTranslater();
@@ -61,31 +63,39 @@ public class TranslateHelper
         return new TranslateTarget
         {
             src = src,
-            toLan = "AUTO"
+            toLan = this.defaultLanguageKey
         };
     }
-    public List<ResultItem> QueryTranslate(string raw, string translateFrom = "user input")
+    public List<ResultItem> QueryTranslate(string raw, string translateFrom = "user input", string? toLanuage = null)
     {
-
-
         var res = new List<ResultItem>();
         if (raw.Length == 0)
             return res;
 
         var target = ParseRawSrc(raw);
         string src = target.src;
-        string toLan = target.toLan;
+        string toLan = toLanuage ?? target.toLan;
         Youdao.ITranslateResult? translateResult = null;
+        int idx = 0;
         translateResult = this.translaters.FirstNotNoneCast((it) =>
         {
             try
             {
+                if (it == null)
+                {
+
+                    throw new Exception($"{this.translatorTypes[idx].FullName} is null");
+                }
                 return it?.Translate(src, toLan, "auto");
             }
             catch (Exception err)
             {
                 Log.Error(err.Message, typeof(TranslateHelper));
                 return null;
+            }
+            finally
+            {
+                idx++;
             }
         });
         if (translateResult != null)
@@ -99,7 +109,7 @@ public class TranslateHelper
             res.Add(new ResultItem
             {
                 Title = "result is null, some error happen in translate. check out your network!",
-                SubTitle = $"Press enter to get help",
+                SubTitle = "Press enter to get help",
                 Action = (ev) =>
                 {
                     UtilsFun.SetClipboardText("https://github.com/N0I0C0K/PowerTranslator/issues?q=");
@@ -186,7 +196,7 @@ public class TranslateHelper
             {
                 return Task.Factory.StartNew(() =>
                 {
-                    Log.Error($"start init {tp.Name} {idx}", tp);
+                    Log.Info($"start init {tp.Namespace} {tp.Name} {idx}", tp);
                     if (translaters[idx] != null)
                         return;
                     try
@@ -196,7 +206,7 @@ public class TranslateHelper
                     }
                     catch (Exception ex)
                     {
-                        Log.Error($"Error occurred: {ex.Message}", typeof(Translater));
+                        Log.Error($"{idx} Error occurred: {ex.InnerException!.Message}", typeof(Translater));
                     }
                 });
             });

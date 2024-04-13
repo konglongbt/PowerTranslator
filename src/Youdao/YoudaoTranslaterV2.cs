@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Translater.Utils;
+using Wox.Plugin.Logger;
 
 namespace Translater.Youdao.V2;
 
@@ -82,12 +83,15 @@ public class TranslateResponse : ITranslateResult
         List<ResultItem> res = new List<ResultItem>();
         foreach (var tres in this.translateResult![0])
         {
-            string pron = tres.srcPronounce != null ? $"({tres.srcPronounce})" : "";
+            string? srcpron = tres.srcPronounce ?? dictResult?.ec?.word?.usphone;
+            string? tgtpron = tres.tgtPronounce;
             res.Add(new ResultItem
             {
-                Title = tres.tgt,
-                SubTitle = $"{tres.src}{pron}",
-                transType = this.type ?? "Translate",
+                Title = tres.tgt + (tres.tgt.Length < 10 && tgtpron != null ? $" ({tgtpron})" : ""),
+                SubTitle = tres.src + (srcpron != null ? $" ({srcpron})" : ""),
+                transType = this.type ?? "unknow type",
+                CopyTgt = tres.tgt,
+                Description = $"{tres.tgt} {(tgtpron != null ? $"({tgtpron})" : "")}\n\n{tres.src} {(srcpron != null ? $" ({srcpron})" : "")}"
             });
         }
         if (this.dictResult != null)
@@ -153,13 +157,16 @@ public class YoudaoTranslater : ITranslater
 
     public YoudaoTranslater()
     {
+
         this.userAgent = UtilsFun.GetRandomUserAgent();
 
         this.random = new Random();
         this.md5 = MD5.Create();
 
-        client = new HttpClient();
-        client.Timeout = TimeSpan.FromSeconds(3);
+        client = new HttpClient(UtilsFun.httpClientDefaultHandler)
+        {
+            Timeout = TimeSpan.FromSeconds(10)
+        };
         client.DefaultRequestHeaders.Add("User-Agent", userAgent);
         client.DefaultRequestHeaders.Add("Referer", "https://fanyi.youdao.com/");
         client.DefaultRequestHeaders.Add("Origin", "https://fanyi.youdao.com");
@@ -174,10 +181,14 @@ public class YoudaoTranslater : ITranslater
         var keyRes = JsonSerializer.Deserialize<KeyResponse>(res.Content.ReadAsStringAsync().GetAwaiter().GetResult());
 
         if (keyRes?.code != 0)
+        {
+            Log.Error($"err in get secretKey, {keyRes?.ToString()}", typeof(YoudaoTranslater));
             throw new Exception("err in get secretKey");
+        }
 
         this.secretKey = keyRes.data!.secretKey;
         this.InitEncrypt();
+
     }
 
     private void InitEncrypt()
@@ -224,17 +235,6 @@ public class YoudaoTranslater : ITranslater
     }
     private void SetCookies()
     {
-        // var res = client.GetAsync("https://rlogs.youdao.com/rlog.php".addQueryParameters(new
-        // {
-        //     _npid = "fanyiweb",
-        //     _ncat = "pageview",
-        //     _ncoo = (2147483647 / this.random.Next(1, 10)).ToString(),
-        //     nssn = "NULL",
-        //     _nver = "1.2.0",
-        //     _ntms = this.UtcNow().ToString(),
-        //     _nhrf = "newweb_translate_text"
-        // })).GetAwaiter().GetResult();
-        // client.DefaultRequestHeaders.Add("cookies", res.Headers.GetValues("Set-Cookie").First());
         string OUTFOX_SEARCH_USER_ID_NCOO = $"OUTFOX_SEARCH_USER_ID_NCOO={random.Next(100000000, 999999999)}.{random.Next(100000000, 999999999)}";
         string OUTFOX_SEARCH_USER_ID = $"OUTFOX_SEARCH_USER_ID={random.Next(100000000, 999999999)}@{random.Next(1, 255)}.{random.Next(1, 255)}.{random.Next(1, 255)}.{random.Next(1, 255)}";
         client.DefaultRequestHeaders.Add("Cookie", $"{OUTFOX_SEARCH_USER_ID_NCOO};{OUTFOX_SEARCH_USER_ID}");
@@ -294,6 +294,13 @@ public class YoudaoTranslater : ITranslater
             }
         }
         return res;
+    }
+
+    public override void Reset()
+    {
+        string OUTFOX_SEARCH_USER_ID_NCOO = $"OUTFOX_SEARCH_USER_ID_NCOO={random.Next(100000000, 999999999)}.{random.Next(100000000, 999999999)}";
+        string OUTFOX_SEARCH_USER_ID = $"OUTFOX_SEARCH_USER_ID={random.Next(100000000, 999999999)}@{random.Next(1, 255)}.{random.Next(1, 255)}.{random.Next(1, 255)}.{random.Next(1, 255)}";
+        client.DefaultRequestHeaders.Add("Cookie", $"{OUTFOX_SEARCH_USER_ID_NCOO};{OUTFOX_SEARCH_USER_ID}");
     }
 
 }

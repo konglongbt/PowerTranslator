@@ -21,8 +21,7 @@ The plugin has been updated to use Youdao translation, which supports translatio
 
 ## Usage
 
-- The default trigger key is `^`. (The current default trigger key conflicts with the Everything plugin. Refer to the following instructions to modify the trigger.)
-- Specify the text to be translated:
+- The default trigger key is `|`. 
 
   - Press `alt+space` to open PowerToys Run, and enter `^[text to be translated]`.
   - Press `Enter` to copy the translation result to the clipboard.
@@ -78,14 +77,23 @@ The plugin has been updated to use Youdao translation, which supports translatio
   - **Why doesn't it support customizing the upper limit entry?**
     Because the official only provides a bool type custom parameter, the current version does not support customizing the upper limit of translation history. I will update it when it is supported later. Or you can download the source code and modify it yourself.
 
+- Second Language
+  - Enable the second translation target language, disabled by default
+  ![second option](Images/second_option.png)
+  - When enabled, the second language result will be automatically displayed with each translation
+  ![second](Images/second.png)
+
+
 ## Install
 
 1. Close PowerToys.
 2. Download [Translator.zip](https://github.com/N0I0C0K/PowerTranslator/releases).
-3. Extract it to `{installation directory}\RunPlugins\`.
+3. Extract it to `%LOCALAPPDATA%\Microsoft\PowerToys\PowerToys Run\Plugins`.
    As shown in the figure:
    ![file](Images/file.png)
 4. Start PowerToys.
+
+Refer to official documents, [Third-Party plugins for PowerToy Run](https://github.com/microsoft/PowerToys/blob/main/doc/thirdPartyRunPlugins.md)
 
 [Installation-upgrade detailed tutorial](./doc/how%20to%20install.md)
 
@@ -97,7 +105,24 @@ The plugin has been updated to use Youdao translation, which supports translatio
   ![auto clean](Images/auto_clean.png)
 - It is recommended to check `Smooth input`, which can optimize the input experience.
   ![enable Smooth input](Images/enable%20Smooth%20input.png)
-
+- Toggles the default target translation language, which defaults to 'auto'
+  ![languages](Images/languages.png)
 ## Issue
 
 If you find translation failure, unknown errors, or need new features, please submit an issue. I will fix or improve it in time.
+
+## Contribution
+
+### Environment
+
+- .NET SDK
+
+### Preparation
+
+1. Fork this repository.
+2. Clone the forked repository to your local machine.
+3. Run lib.bat.
+4. Open with Visual Studio Code (or any other IDE).
+5. Start coding!
+
+[Help Document - Getting Started!](doc/code-start-en.md)

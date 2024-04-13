@@ -4,6 +4,7 @@ using Microsoft.PowerToys.Settings.UI.Library;
 using Translater.Utils;
 using ManagedCommon;
 using System.Windows.Controls;
+using Wox.Infrastructure;
 
 namespace Translater
 {
@@ -16,13 +17,15 @@ namespace Translater
         public string? iconPath { get; set; }
         public string? transType { get; set; }
         public string? fromApiName { get; set; }
+        public string? Description { get; set; }
     }
 
     public class Translater : IPlugin, IDisposable, IDelayedExecutionPlugin, ISettingProvider, IContextMenu
     {
         public string Name => "Translator";
+        public static string PluginID => "EY1EBAMTNIWIVLYM039DSOS5MWITDJOD";
         public string Description => "A simple translation plugin, based on Youdao Translation";
-        public IEnumerable<PluginAdditionalOption> AdditionalOptions => GetAdditionalOptions();
+        public IEnumerable<PluginAdditionalOption> AdditionalOptions => additionOptions;
         public PluginMetadata? queryMetaData = null;
         public IPublicAPI? publicAPI = null;
         public const int delayQueryMillSecond = 500;
@@ -31,6 +34,7 @@ namespace Translater
         private TranslateHelper? translateHelper;
         private Suggest.SuggestHelper? suggestHelper;
         private History.HistoryHelper? historyHelper;
+
 
         private bool isDebug = false;
         private string queryPre = "";
@@ -41,9 +45,15 @@ namespace Translater
         private object preQueryLock = new Object();
 
         // settings
+        private static readonly List<string> languagesOptions = new List<string> { "auto", "Chinese (Simplified)", "Chinese (Traditional)", "English", "Japanese", "Korean", "Russian", "French", "Spanish", "Arabic", "German" };
+        private static readonly List<string> languagesKeys = new List<string> { "auto", "zh-CHS", "zh-CHT", "en", "ja", "ko", "ru", "fr", "es", "ar", "de" };
+        private static readonly List<PluginAdditionalOption> additionOptions = GetAdditionalOptions();
+        private string defaultLanguageKey = "auto";
         private bool delayedExecution = false;
         private bool enable_suggest = true;
         private bool enable_auto_read = false;
+        private bool enable_second_lanuage = false;
+        private string second_lanuage_key = "auto";
         private void LogInfo(string info)
         {
             if (!isDebug)
@@ -179,6 +189,7 @@ namespace Translater
                 return res.ToResultList(this.iconPath);
             }
 
+            // get suggest in other thread
             Task<List<ResultItem>>? suggestTask = null;
             if (enable_suggest)
             {
@@ -188,12 +199,31 @@ namespace Translater
                 });
             }
 
+            // get second translate result in other thread
+            Task<List<ResultItem>>? secondTranslateTask = null;
+            if (enable_second_lanuage && second_lanuage_key != null)
+            {
+                secondTranslateTask = Task.Run(() =>
+                {
+                    return translateHelper!.QueryTranslate(querySearch, toLanuage: second_lanuage_key);
+                });
+            }
+
             res.AddRange(this.translateHelper!.QueryTranslate(querySearch));
+
+            if (secondTranslateTask != null)
+            {
+                var secondRes = secondTranslateTask.GetAwaiter().GetResult();
+                var resItem = secondRes[0];
+                resItem.SubTitle = $"{resItem.SubTitle} [second lanuage]";
+                res.Insert(1, resItem);
+            }
             if (suggestTask != null)
             {
                 var suggest = suggestTask.GetAwaiter().GetResult();
                 res.AddRange(suggest);
             }
+
             if (isDebug)
             {
                 res.Add(new ResultItem
@@ -244,7 +274,7 @@ namespace Translater
             publicAPI = context.API;
             var translaTask = Task.Factory.StartNew(() =>
             {
-                translateHelper = new TranslateHelper(publicAPI);
+                translateHelper = new TranslateHelper(publicAPI, this.defaultLanguageKey);
             });
             suggestHelper = new Suggest.SuggestHelper(publicAPI);
             historyHelper = new History.HistoryHelper();
@@ -264,9 +294,12 @@ namespace Translater
             }
             this.historyHelper?.UpdateIconPath(now);
         }
-
         public static List<PluginAdditionalOption> GetAdditionalOptions()
         {
+            var lanuageItems = languagesOptions.Select((val, idx) =>
+            {
+                return new KeyValuePair<string, string>(val, idx.ToString());
+            }).ToList();
             return new List<PluginAdditionalOption>
             {
                 new PluginAdditionalOption{
@@ -278,10 +311,27 @@ namespace Translater
                     Key = "EnableAutoRead",
                     DisplayLabel = "Automatic reading result",
                     Value = false,
+                },
+                new PluginAdditionalOption{
+                    Key = "DefaultTargetLanguage",
+                    DisplayDescription = "Default translation target language, Default is auto",
+                    DisplayLabel = "Default target lanuage",
+                    PluginOptionType = PluginAdditionalOption.AdditionalOptionType.Combobox,
+                    ComboBoxOptions = languagesOptions,
+                    ComboBoxValue = 0,
+                    ComboBoxItems = lanuageItems
+                },
+                new PluginAdditionalOption{
+                    Key = "SecondTargetLanuage",
+                    DisplayLabel = "Second target lanuage",
+                    DisplayDescription = "Active second target lanuage, will display after main target",
+                    PluginOptionType = PluginAdditionalOption.AdditionalOptionType.CheckboxAndCombobox,
+                    Value = false,
+                    ComboBoxValue = 0,
+                    ComboBoxItems = lanuageItems
                 }
             };
         }
-
         public void Dispose()
         {
             this.publicAPI!.ThemeChanged -= this.UpdateIconPath;
@@ -298,24 +348,46 @@ namespace Translater
                 {
                     return set.Key == key;
                 });
-                return target?.Value ?? true;
+                return target!;
             };
-            this.enable_suggest = GetSetting("EnableSuggest");
-            this.enable_auto_read = GetSetting("EnableAutoRead");
-        }
+            this.enable_suggest = GetSetting("EnableSuggest").Value;
+            this.enable_auto_read = GetSetting("EnableAutoRead").Value;
+            int defaultLanguageIdx = GetSetting("DefaultTargetLanguage").ComboBoxValue;
+            defaultLanguageIdx = defaultLanguageIdx >= languagesKeys.Count ? 0 : defaultLanguageIdx;
+            defaultLanguageKey = languagesKeys[defaultLanguageIdx];
 
+            var secondOption = GetSetting("SecondTargetLanuage");
+            enable_second_lanuage = secondOption.Value;
+            second_lanuage_key = languagesKeys[secondOption.ComboBoxValue >= languagesKeys.Count ? 0 : secondOption.ComboBoxValue];
+
+            if (this.translateHelper != null)
+                this.translateHelper.defaultLanguageKey = this.defaultLanguageKey;
+        }
         public List<ContextMenuResult> LoadContextMenus(Result selectedResult)
         {
             return new List<ContextMenuResult>
             {
                 new ContextMenuResult
                 {
-                    Title = "Copy (Enter); Copy Subtitle(shift+Enter)",
+                    Title = "Go to dictionary",
+                    Action = context=>{
+                        Helper.OpenInShell($"https://www.youdao.com/result?word={selectedResult.Title}&lang=en");
+                        return false;
+                    },
+                    Glyph = "\xE721",
+                    PluginName="PowerTranslator",
+                    FontFamily = "Segoe Fluent Icons,Segoe MDL2 Assets",
+                },
+                new ContextMenuResult
+                {
+                    Title = "Copy (Enter), Subtitle(shift+Enter)",
                     Action = context=>{
                         UtilsFun.SetClipboardText(selectedResult.SubTitle);
                         return false;
                     },
-                    Glyph = "\u2B1A",
+                    Glyph = "\xF413",
+                    PluginName="PowerTranslator",
+                    FontFamily = "Segoe Fluent Icons,Segoe MDL2 Assets",
                     AcceleratorKey = System.Windows.Input.Key.Return,
                     AcceleratorModifiers = System.Windows.Input.ModifierKeys.Shift
                 },
@@ -326,7 +398,9 @@ namespace Translater
                         this.translateHelper?.Read(selectedResult.Title);
                         return false;
                     },
-                    Glyph = "\u23F5",
+                    Glyph = "\xEDB5",
+                    PluginName="PowerTranslator",
+                    FontFamily = "Segoe Fluent Icons,Segoe MDL2 Assets",
                     AcceleratorKey = System.Windows.Input.Key.Return,
                     AcceleratorModifiers = System.Windows.Input.ModifierKeys.Control
                 }
